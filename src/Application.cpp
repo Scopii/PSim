@@ -89,7 +89,7 @@ void Application::Init()
         0.0,0.2,0.8,1.0,
         0.0,0.2,0.8,1.0,
         0.0,0.1,0.0,0.0,
-        0.8,1.0,1,3};
+        0.8,1.0,1,1};
 
     timeUBO = new UniformBuffer(&timeData,sizeof(timeData),0 ,DYNAMIC);
     posUBO = new UniformBuffer(&posData, sizeof(posData), 1, DYNAMIC);

@@ -25,10 +25,12 @@ float getProgress(int type, float lifeProgress){
 }
 
 vec4 unpackColor(uint packedColor) {
-    return vec4(float((packedColor >> 24) & 0xFF) / 255.0,
-                float((packedColor >> 16) & 0xFF) / 255.0,
-                float((packedColor >> 8) & 0xFF) / 255.0,
-                float(packedColor & 0xFF) / 255.0);
+    return vec4(
+        float((packedColor >> 24) & 0xFF) / 255.0,
+        float((packedColor >> 16) & 0xFF) / 255.0,
+        float((packedColor >> 8) & 0xFF) / 255.0,
+        float(packedColor & 0xFF) / 255.0
+    );
 }
 
 vec3 rotateColor(vec3 color, float rotation) {
