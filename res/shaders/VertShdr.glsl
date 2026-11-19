@@ -289,6 +289,20 @@ vec4 updateDirecAngleVec(DirecAngleVecData data){
     return vec4(VectorFromDirecAngle(data.direction.xyz, data.minRadius, data.maxRadius, data.angleDegrees, data.xMult, data.yMult, data.zMult), 0);
 }
 
+void initParticleValues(uint id){
+    particles[id].vel = updateDirecAngleVec(velUBO);
+    particles[id].pos.xyz = VectorFromRadius(posUBO.posRadiusMin, posUBO.posRadiusMax, posUBO.posOrigin.xyz);
+    particles[id].grav = updateDirecAngleVec(gravUBO);
+
+    particles[id].rot = float16_t(rng_float(spinUBO.rotMin, spinUBO.rotMax));
+    particles[id].spin = float16_t(rng_float(spinUBO.spinMin, spinUBO.spinMax));
+
+    particles[id].sizeData = updateGradient(sizeUBO);
+    particles[id].accelData = updateGradient(accelUBO);
+    particles[id].colorData = updateGradient(colorUBO);
+    particles[id].alphaData = updateGradient(alphaUBO);
+}
+
 uniform int alphaType = LINEAR;
 uniform int sizeType = FAST_END;
 uniform int accelType = FAST_START;
@@ -311,100 +325,101 @@ void main()
     uint id = gl_VertexID;
     rng_seed(2341 * gl_VertexID);
 
-    //Respawn
-    if (totalTime >= particles[id].death) {
-        float16_t totalTimeSF = float16_t(totalTime);
-
-        particles[id].launch = totalTimeSF;
-        particles[id].death = totalTimeSF + float16_t(rng_float(timeUBO.deathMin, timeUBO.deathMax));
-
-        particles[id].vel = updateDirecAngleVec(velUBO);
-        particles[id].pos.xyz = VectorFromRadius(posUBO.posRadiusMin, posUBO.posRadiusMax, posUBO.posOrigin.xyz);
-        particles[id].grav = updateDirecAngleVec(gravUBO);
-
-        particles[id].rot = float16_t(rng_float(spinUBO.rotMin, spinUBO.rotMax));
-        particles[id].spin = float16_t(rng_float(spinUBO.spinMin, spinUBO.spinMax));
-
-        particles[id].sizeData = updateGradient(sizeUBO);
-        particles[id].accelData = updateGradient(accelUBO);
-        particles[id].colorData = updateGradient(colorUBO);
-        particles[id].alphaData = updateGradient(alphaUBO);
+    float16_t currentTime = float16_t(totalTime);
+    // If particle hasn't been initialized or has died
+    if (particles[id].launch == 0.0 || particles[id].death <= currentTime) {
+        // Set new launch time
+        particles[id].launch = currentTime + float16_t(rng_float(timeUBO.launchMin, timeUBO.launchMax));
+        // Set new death time
+        particles[id].death = particles[id].launch + float16_t(rng_float(timeUBO.deathMin, timeUBO.deathMax));
+        // Initialize particle values
+        initParticleValues(id);
     }
 
     Particle p = particles[id];
 
-    vec3 pos = p.pos.xyz;
-    vec3 grav = p.grav.xyz;
-    vec3 vel = p.vel.xyz;
+    if (p.launch <= totalTime && p.death > totalTime){
+        vec3 pos = p.pos.xyz;
+        vec3 grav = p.grav.xyz;
+        vec3 vel = p.vel.xyz;
 
-    // Life Progress Calculation
-    float lifeTime = totalTime - p.launch;
-    float maxLifeTime = p.death - p.launch;
-    float lifeProgress = lifeTime / maxLifeTime;
+        // Life Progress Calculation
+        float lifeTime = totalTime - p.launch;
+        float maxLifeTime = p.death - p.launch;
+        float lifeProgress = lifeTime / maxLifeTime;
 
-    // Rotation
-    float rotRadians = float(p.rot) * TWO_PI;
-    rotRadians += p.spin * totalTime; // Spin is radians per second
-    rotRadians = mod(rotRadians, TWO_PI);
-    vRotation = rotRadians;
+        // Rotation
+        float rotRadians = float(p.rot) * TWO_PI;
+        rotRadians += p.spin * totalTime; // Spin is radians per second
+        rotRadians = mod(rotRadians, TWO_PI);
+        vRotation = rotRadians;
 
-    // Motion
-    float curAccel;
-    int accelsLength = accels.length();
-    float accelGradientProg = getGradientProgress(p.accelData.start, p.accelData.end, p.accelData.lowLimit, p.accelData.upLimit, mod(lifeProgress, 1 / float(p.accelData.loop)), accelType);
-    GradientData accelGradientData = getGradientData(accelsLength, accelGradientProg);
-    if (accelsLength >= 2){
-        float currentRot = mix(p.accelData.startRot, p.accelData.endRot, lifeProgress);
-        float currentCos = abs(cos(currentRot * M_PI));
-        float centerVal = (accelsLength % 2 == 0) ? accels[accelsLength / 2 -1] + accels[accelsLength / 2] / 2 : accels[int(floor(accelsLength /2.0))];
-        centerVal *= (1.0 - currentCos);
-        float firstAccel = (currentRot > 0.5) ? currentCos * accels[accelsLength - 1 - accelGradientData.first] : currentCos * accels[accelGradientData.first];
-        float secondAccel = (currentRot > 0.5) ? currentCos * accels[accelsLength - 1 - accelGradientData.second] : currentCos * accels[accelGradientData.second];
-        curAccel = mix(firstAccel + centerVal, secondAccel + centerVal, accelGradientData.actualProgress) * p.accelData.scale;
-    }else curAccel = accels[0] * p.accelData.scale;
+        // Motion
+        float curAccel;
+        int accelsLength = accels.length();
+        float accelGradientProg = getGradientProgress(p.accelData.start, p.accelData.end, p.accelData.lowLimit, p.accelData.upLimit, mod(lifeProgress, 1 / float(p.accelData.loop)), accelType);
+        GradientData accelGradientData = getGradientData(accelsLength, accelGradientProg);
+        if (accelsLength >= 2){
+            float currentRot = mix(p.accelData.startRot, p.accelData.endRot, lifeProgress);
+            float currentCos = abs(cos(currentRot * M_PI));
+            float centerVal = (accelsLength % 2 == 0) ? accels[accelsLength / 2 -1] + accels[accelsLength / 2] / 2 : accels[int(floor(accelsLength /2.0))];
+            centerVal *= (1.0 - currentCos);
+            float firstAccel = (currentRot > 0.5) ? currentCos * accels[accelsLength - 1 - accelGradientData.first] : currentCos * accels[accelGradientData.first];
+            float secondAccel = (currentRot > 0.5) ? currentCos * accels[accelsLength - 1 - accelGradientData.second] : currentCos * accels[accelGradientData.second];
+            curAccel = mix(firstAccel + centerVal, secondAccel + centerVal, accelGradientData.actualProgress) * p.accelData.scale;
+        }else curAccel = accels[0] * p.accelData.scale;
 
-    vec3 posBonus = grav * deltaTime;
-    posBonus += vel * deltaTime * curAccel;
-    particles[id].pos.xyz += posBonus;
-    gl_Position = vec4(p.pos.xyz, 1.0);
+        vec3 posBonus = grav * deltaTime;
+        posBonus += vel * deltaTime * curAccel;
+        particles[id].pos.xyz += posBonus;
+        gl_Position = vec4(p.pos.xyz, 1.0); // Bug? Should be: gl_Position = projection * view * vec4(p.pos.xyz, 1.0);
 
-    // Size
-    int sizesLength = sizes.length();
-    float sizeGradientProg = getGradientProgress(p.sizeData.start, p.sizeData.end, p.sizeData.lowLimit, p.sizeData.upLimit, mod(lifeProgress, 1 / float(p.sizeData.loop)), sizeType);
-    GradientData sizeGradientData = getGradientData(sizesLength, sizeGradientProg);
-    if (sizesLength >= 2){
-        float currentRot = mix(p.sizeData.startRot, p.sizeData.endRot, lifeProgress);
-        float currentCos = abs(cos(currentRot * M_PI));
-        float centerVal = (sizesLength % 2 == 0) ? sizes[sizesLength / 2 -1] + sizes[sizesLength / 2] / 2 : sizes[int(floor(sizesLength/2.0))];
-        centerVal *= (1.0 - currentCos);
-        float firstSize = (currentRot > 0.5) ? currentCos * sizes[sizesLength - 1 - sizeGradientData.first] : currentCos * sizes[sizeGradientData.first];
-        float secondSize = (currentRot > 0.5) ? currentCos * sizes[sizesLength - 1 - sizeGradientData.second] : currentCos * sizes[sizeGradientData.second];
-        vScale = mix(firstSize + centerVal, secondSize + centerVal, sizeGradientData.actualProgress) * p.sizeData.scale;
-    }else vScale = sizes[0] * p.sizeData.scale;
+        // Size
+        int sizesLength = sizes.length();
+        float sizeGradientProg = getGradientProgress(p.sizeData.start, p.sizeData.end, p.sizeData.lowLimit, p.sizeData.upLimit, mod(lifeProgress, 1 / float(p.sizeData.loop)), sizeType);
+        GradientData sizeGradientData = getGradientData(sizesLength, sizeGradientProg);
+        if (sizesLength >= 2){
+            float currentRot = mix(p.sizeData.startRot, p.sizeData.endRot, lifeProgress);
+            float currentCos = abs(cos(currentRot * M_PI));
+            float centerVal = (sizesLength % 2 == 0) ? sizes[sizesLength / 2 -1] + sizes[sizesLength / 2] / 2 : sizes[int(floor(sizesLength/2.0))];
+            centerVal *= (1.0 - currentCos);
+            float firstSize = (currentRot > 0.5) ? currentCos * sizes[sizesLength - 1 - sizeGradientData.first] : currentCos * sizes[sizeGradientData.first];
+            float secondSize = (currentRot > 0.5) ? currentCos * sizes[sizesLength - 1 - sizeGradientData.second] : currentCos * sizes[sizeGradientData.second];
+            vScale = mix(firstSize + centerVal, secondSize + centerVal, sizeGradientData.actualProgress) * p.sizeData.scale;
+        }else vScale = sizes[0] * p.sizeData.scale;
 
-    // Color
-    float colorGradientProg = getGradientProgress(p.colorData.start, p.colorData.end, p.colorData.lowLimit, p.colorData.upLimit, mod(lifeProgress, 1 / float(p.colorData.loop)), colorType);
-    GradientData colorGradientData = getGradientData(colors.length(), colorGradientProg);
-    // Apply gradient rotation !SCALAR UNUSED!
-    float gradientRotation = mix(p.colorData.startRot, p.colorData.endRot, lifeProgress);
-    vec3 leftColor = rotateColor(colors[colorGradientData.first].rgb, gradientRotation * TWO_PI);
-    vec3 rightColor = rotateColor(colors[colorGradientData.second].rgb, gradientRotation * TWO_PI);
-    vec3 finalColor = mix(leftColor, rightColor, mod(colorGradientData.actualProgress, 1 / float(p.accelData.loop)));
+        // Color
+        float colorGradientProg = getGradientProgress(p.colorData.start, p.colorData.end, p.colorData.lowLimit, p.colorData.upLimit, mod(lifeProgress, 1 / float(p.colorData.loop)), colorType);
+        GradientData colorGradientData = getGradientData(colors.length(), colorGradientProg);
+        // Apply gradient rotation !SCALAR UNUSED!
+        float gradientRotation = mix(p.colorData.startRot, p.colorData.endRot, lifeProgress);
+        vec3 leftColor = rotateColor(colors[colorGradientData.first].rgb, gradientRotation * TWO_PI);
+        vec3 rightColor = rotateColor(colors[colorGradientData.second].rgb, gradientRotation * TWO_PI);
+        vec3 finalColor = mix(leftColor, rightColor, mod(colorGradientData.actualProgress, 1 / float(p.colorData.loop)));
 
-    // Alpha
-    float curAlpha;
-    int alphaLength = alphas.length();
-    float alphaGradientProg = getGradientProgress(p.alphaData.start, p.alphaData.end, p.alphaData.lowLimit, p.alphaData.upLimit, mod(lifeProgress, 1 / float(p.alphaData.loop)), alphaType);
-    GradientData alphaGradientData = getGradientData(alphaLength, alphaGradientProg);
-    if (alphaLength >= 2){
-        float currentRot = mix(p.alphaData.startRot, p.alphaData.endRot, lifeProgress);
-        float currentCos = abs(cos(currentRot * M_PI));
-        float centerVal = (alphaLength % 2 == 0) ? alphas[alphaLength / 2 -1] + alphas[alphaLength / 2] / 2 : alphas[int(floor(alphaLength /2.0))];
-        centerVal *= (1.0 - currentCos);
-        float firstAlpha = (currentRot > 0.5) ? currentCos * alphas[alphaLength - 1 - alphaGradientData.first] : currentCos * alphas[alphaGradientData.first];
-        float secondAlpha = (currentRot > 0.5) ? currentCos * alphas[alphaLength - 1 - alphaGradientData.second] : currentCos * alphas[alphaGradientData.second];
-        curAlpha = mix(firstAlpha + centerVal, secondAlpha + centerVal, alphaGradientData.actualProgress) * p.alphaData.scale;
-    }else curAlpha = alphas[0] * p.alphaData.scale;
+        // Alpha
+        float curAlpha;
+        int alphaLength = alphas.length();
+        float alphaGradientProg = getGradientProgress(p.alphaData.start, p.alphaData.end, p.alphaData.lowLimit, p.alphaData.upLimit, mod(lifeProgress, 1 / float(p.alphaData.loop)), alphaType);
+        GradientData alphaGradientData = getGradientData(alphaLength, alphaGradientProg);
+        if (alphaLength >= 2){
+            float currentRot = mix(p.alphaData.startRot, p.alphaData.endRot, lifeProgress);
+            float currentCos = abs(cos(currentRot * M_PI));
+            float centerVal = (alphaLength % 2 == 0) ? alphas[alphaLength / 2 -1] + alphas[alphaLength / 2] / 2 : alphas[int(floor(alphaLength /2.0))];
+            centerVal *= (1.0 - currentCos);
+            float firstAlpha = (currentRot > 0.5) ? currentCos * alphas[alphaLength - 1 - alphaGradientData.first] : currentCos * alphas[alphaGradientData.first];
+            float secondAlpha = (currentRot > 0.5) ? currentCos * alphas[alphaLength - 1 - alphaGradientData.second] : currentCos * alphas[alphaGradientData.second];
+            curAlpha = mix(firstAlpha + centerVal, secondAlpha + centerVal, alphaGradientData.actualProgress) * p.alphaData.scale;
+        }else curAlpha = alphas[0] * p.alphaData.scale;
 
-    vColor = vec4(finalColor, curAlpha);
+        vColor = vec4(finalColor, curAlpha);
+    }else {
+        // Particle is not active, move it off-screen
+        gl_Position = vec4(-1000.0); // Move off-screen
+        vColor = vec4(0.0); // Fully transparent
+        //vec3 surfaceColor = vec3(0.8, 0.4, 0.2);
+        //vec3 surfaceColor = vec3(0.8, 0.4, 0.2);
+    }
+
+
 }

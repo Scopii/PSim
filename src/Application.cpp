@@ -62,7 +62,7 @@ void Application::Init()
     currentInstance = this;
     InitOpenGLWindow(); //indow and OPENGL Settings
 
-    timeData= {0.0, 0.0, 2.0 , 2.0};
+    timeData= {0.0, 10.0, 2.0 , 10.0};
     velData= {vec4(vec3(0.0, 1.0, 0.0),0),1.0,0.0001,360.0,1.0,1.0,1.0};
     posData= {0.0, 0.0, vec4(vec3(0.0, 0.0, 0.0),0)};
     gravData= {vec4(vec3(0.0, 1.0, 0.0),0),0.3,3.0,360.0,1.0,1.0,1.0};

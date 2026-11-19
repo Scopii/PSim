@@ -16,7 +16,7 @@ using half = uint16_t;
 
 const int WIDTH = 1920;
 const int HEIGHT = 1080;
-const int NUM_PARTICLES = 10000000; //10*100*100*100
+const int NUM_PARTICLES = 1000000; //10*100*100*100
 const int WORK_GROUP_SIZE = 256;
 
 const float TWO_PI = 2.0f * M_PI;
